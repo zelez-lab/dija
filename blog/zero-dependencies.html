@@ -1,0 +1,409 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>A Rust UI framework with zero dependencies</title>
+<meta name="description" content="Dija is a cross-platform UI framework in Rust with zero external dependencies. Here's why, and what that actually cost.">
+<style>
+  :root {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --text: #e2e8f0;
+    --muted: #94a3b8;
+    --accent: #3b82f6;
+    --code-bg: #131c2b;
+    --green: #4ade80;
+    --red: #f87171;
+    --yellow: #fbbf24;
+    --purple: #c084fc;
+    --cyan: #22d3ee;
+  }
+
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: var(--bg);
+    color: var(--text);
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Helvetica, Arial, sans-serif;
+    font-size: 18px;
+    line-height: 1.7;
+    padding: 0 24px;
+  }
+
+  article {
+    max-width: 720px;
+    margin: 0 auto;
+    padding: 64px 0 120px;
+  }
+
+  h1 {
+    font-size: 2.4em;
+    line-height: 1.2;
+    margin-bottom: 32px;
+    color: white;
+  }
+
+  h2 {
+    font-size: 1.5em;
+    margin-top: 56px;
+    margin-bottom: 16px;
+    color: white;
+    border-bottom: 1px solid #334155;
+    padding-bottom: 8px;
+  }
+
+  p {
+    margin-bottom: 20px;
+  }
+
+  a {
+    color: var(--accent);
+    text-decoration: none;
+  }
+  a:hover {
+    text-decoration: underline;
+  }
+
+  strong {
+    color: white;
+  }
+
+  em {
+    font-style: italic;
+    color: var(--muted);
+  }
+
+  code {
+    font-family: "JetBrains Mono", "Fira Code", "SF Mono", Menlo, monospace;
+    font-size: 0.85em;
+    background: var(--code-bg);
+    padding: 2px 6px;
+    border-radius: 4px;
+    color: var(--cyan);
+  }
+
+  pre {
+    background: var(--code-bg);
+    border-radius: 8px;
+    padding: 24px;
+    overflow-x: auto;
+    margin-bottom: 24px;
+    border: 1px solid #1e293b;
+  }
+
+  pre code {
+    background: none;
+    padding: 0;
+    font-size: 0.82em;
+    line-height: 1.6;
+    color: var(--text);
+  }
+
+  /* Syntax highlighting */
+  .kw { color: var(--purple); }       /* keywords */
+  .ty { color: var(--cyan); }         /* types */
+  .fn { color: var(--accent); }       /* functions */
+  .st { color: var(--green); }        /* strings */
+  .cm { color: var(--muted); }        /* comments */
+  .num { color: var(--yellow); }      /* numbers */
+  .mc { color: var(--yellow); }       /* macros */
+  .at { color: var(--muted); }        /* attributes */
+
+  hr {
+    border: none;
+    border-top: 1px solid #334155;
+    margin: 48px 0;
+  }
+
+  .lead {
+    font-size: 1.15em;
+    color: var(--muted);
+    margin-bottom: 24px;
+  }
+
+  .footer {
+    margin-top: 64px;
+    padding-top: 32px;
+    border-top: 1px solid #334155;
+    color: var(--muted);
+    font-size: 0.9em;
+  }
+
+  @media (max-width: 600px) {
+    body { font-size: 16px; }
+    h1 { font-size: 1.8em; }
+    pre { padding: 16px; font-size: 0.78em; }
+    article { padding: 32px 0 80px; }
+  }
+</style>
+</head>
+<body>
+<article>
+
+<h1>A Rust UI framework with zero dependencies</h1>
+
+<p>Dija is a cross-platform UI framework I'm building in Rust. It runs on macOS, Linux, iOS, Android, and terminals &mdash; same codebase, same binary. It has zero external dependencies.</p>
+
+<p>Not "few dependencies." Not "minimal dependencies." Zero.</p>
+
+<p>The entire runtime &mdash; the layout engine, the GPU pipeline, the font parser, the actor system, the coroutine scheduler &mdash; is built from scratch. <code>cargo build</code> downloads nothing. Here's why, and what that actually cost.</p>
+
+<hr>
+
+<h2>The constraint</h2>
+
+<p>I'm also building an operating system called zelez OS. On zelez, every app is a WASM module running on bare metal. There is no package manager. There is no <code>std</code>. If a crate depends on anything I can't compile to <code>#![no_std]</code>, it can't ship.</p>
+
+<p>This wasn't a philosophical decision about software purity. It was a survival constraint. I needed a GUI framework that could run on a 256KB microcontroller <em>and</em> a desktop workstation, from the same codebase. Nothing like that existed, so I started building one.</p>
+
+<p>Early on I tried pulling in a few crates. Each one brought transitive dependencies. Some needed <code>std</code>. Some assumed an allocator I didn't have. Some were fine on desktop but broke on embedded. After fighting this for a few weeks, I made the decision: zero deps, and I'll build what I need.</p>
+
+<p>That was about a year ago. Here's what "building what I need" actually looked like.</p>
+
+<hr>
+
+<h2>A TTF font parser</h2>
+
+<p>Most Rust projects use <code>fontdb</code> + <code>rusttype</code> or call into FreeType and HarfBuzz through FFI. None of those work in <code>no_std</code>. So I wrote a TrueType parser from scratch.</p>
+
+<p>It parses the tables you need for basic text rendering: <code>head</code>, <code>hhea</code>, <code>maxp</code>, <code>cmap</code> (format 4 for BMP, format 12 for full Unicode), <code>loca</code>, <code>glyf</code>, <code>hmtx</code>, and <code>kern</code>. It handles compound glyphs with recursive component expansion. It does pair-based kerning.</p>
+
+<pre><code><span class="kw">pub struct</span> <span class="ty">Font</span> {
+    data: <span class="ty">Vec</span>&lt;<span class="ty">u8</span>&gt;,
+    units_per_em: <span class="ty">u16</span>,
+    ascender: <span class="ty">i16</span>,
+    descender: <span class="ty">i16</span>,
+    line_gap: <span class="ty">i16</span>,
+    num_glyphs: <span class="ty">u16</span>,
+    <span class="cm">// Table offsets</span>
+    glyf_offset: <span class="ty">usize</span>,
+    loca_offset: <span class="ty">usize</span>,
+    hmtx_offset: <span class="ty">usize</span>,
+    loca_format: <span class="ty">i16</span>, <span class="cm">// 0 = short, 1 = long</span>
+    <span class="cm">// Kern table</span>
+    kern_pairs_offset: <span class="ty">usize</span>,
+    kern_num_pairs: <span class="ty">u16</span>,
+    <span class="cm">// Cmap subtables</span>
+    cmap4: <span class="ty">Option</span>&lt;<span class="ty">Cmap4</span>&gt;,   <span class="cm">// BMP</span>
+    cmap12: <span class="ty">Option</span>&lt;<span class="ty">Cmap12</span>&gt;, <span class="cm">// Full Unicode</span>
+    <span class="cm">// Glyph cache (LRU eviction for MCU)</span>
+    cache: <span class="ty">GlyphCache</span>,
+}</code></pre>
+
+<p>The glyph rasterizer flattens quadratic B&eacute;zier curves into line segments, then does scanline coverage accumulation. Coverage is stored as linear (not sRGB-encoded) so that GPU bilinear filtering and <code>color * coverage</code> compositing produce correct blending at glyph edges.</p>
+
+<p>On desktop, the glyph cache is unbounded. On MCU, you can set a limit:</p>
+
+<pre><code><span class="cm">// Desktop: unlimited cache</span>
+<span class="kw">let</span> cache = <span class="ty">GlyphCache</span>::<span class="fn">new</span>();
+
+<span class="cm">// MCU with 32KB for glyphs</span>
+<span class="kw">let</span> cache = <span class="ty">GlyphCache</span>::<span class="fn">with_limit</span>(<span class="num">256</span>);</code></pre>
+
+<p>When the cache is full, the least-recently-used entry is evicted. Same code, same API, different memory budget.</p>
+
+<p><strong>What's missing vs HarfBuzz:</strong> complex text shaping. Arabic, Devanagari, and other scripts that need contextual glyph substitution don't work yet. For Latin, CJK, and most other scripts, it's fine. This is a known gap, and I'll address it &mdash; but reimplementing OpenType Layout tables is a project on its own.</p>
+
+<p><strong>Was it worth it?</strong> The parser is about 1,000 lines. It took maybe two weeks. For what Dija needs today, it's enough. And it runs on a microcontroller, which FreeType never will.</p>
+
+<hr>
+
+<h2>Raw Metal and Vulkan FFI</h2>
+
+<p>Most Rust GPU projects use <code>wgpu</code> (a cross-platform abstraction) or <code>ash</code> (Vulkan bindings) or <code>metal-rs</code> (Metal bindings). I use none of them. Dija talks to Metal and Vulkan directly through raw FFI.</p>
+
+<p>For Metal, that means writing Objective-C FFI by hand:</p>
+
+<pre><code><span class="kw">pub type</span> <span class="ty">Id</span> = *<span class="kw">mut</span> <span class="ty">c_void</span>;
+<span class="kw">pub type</span> <span class="ty">Sel</span> = *<span class="kw">mut</span> <span class="ty">c_void</span>;
+
+<span class="at">#[link(name = </span><span class="st">"objc"</span><span class="at">, kind = </span><span class="st">"dylib"</span><span class="at">)]</span>
+<span class="kw">unsafe extern</span> <span class="st">"C"</span> {
+    <span class="kw">pub fn</span> <span class="fn">objc_getClass</span>(name: *<span class="kw">const</span> <span class="ty">u8</span>) -&gt; <span class="ty">Class</span>;
+    <span class="kw">pub fn</span> <span class="fn">sel_registerName</span>(name: *<span class="kw">const</span> <span class="ty">u8</span>) -&gt; <span class="ty">Sel</span>;
+    <span class="kw">pub fn</span> <span class="fn">objc_msgSend</span>();
+}
+
+<span class="at">#[link(name = </span><span class="st">"Metal"</span><span class="at">, kind = </span><span class="st">"framework"</span><span class="at">)]</span>
+<span class="kw">unsafe extern</span> <span class="st">"C"</span> {
+    <span class="kw">pub fn</span> <span class="fn">MTLCreateSystemDefaultDevice</span>() -&gt; <span class="ty">Id</span>;
+}
+
+<span class="cm">/// Create an NSString from a null-terminated byte slice.</span>
+<span class="kw">pub fn</span> <span class="fn">nsstring</span>(s: &amp;[<span class="ty">u8</span>]) -&gt; <span class="ty">Id</span> {
+    <span class="kw">let</span> f: <span class="kw">unsafe extern</span> <span class="st">"C"</span> <span class="kw">fn</span>(<span class="ty">Id</span>, <span class="ty">Sel</span>, *<span class="kw">const</span> <span class="ty">u8</span>) -&gt; <span class="ty">Id</span> =
+        <span class="kw">unsafe</span> { core::mem::<span class="fn">transmute</span>(objc_msgSend <span class="kw">as</span> *<span class="kw">const</span> <span class="ty">c_void</span>) };
+    <span class="kw">unsafe</span> {
+        <span class="fn">f</span>(
+            <span class="fn">cls</span>(b<span class="st">"NSString\0"</span>) <span class="kw">as</span> <span class="ty">Id</span>,
+            <span class="fn">sel</span>(b<span class="st">"stringWithUTF8String:\0"</span>),
+            s.<span class="fn">as_ptr</span>(),
+        )
+    }
+}</code></pre>
+
+<p>Every Metal API call goes through <code>objc_msgSend</code> with transmuted function pointers. It's ugly. It's also about 640KB of Rust code, covering device creation, command queues, render and compute pipelines, texture management, MSL shader compilation, and MSAA.</p>
+
+<p>For Vulkan, it's a similar story: raw FFI bindings with 34 pre-compiled SPIR-V shader modules.</p>
+
+<p><strong>Why not wgpu?</strong> Three reasons. First, wgpu brings a large dependency tree &mdash; it's an abstraction layer over Metal, Vulkan, DX12, and WebGPU, and most of that abstraction is weight I don't need. Second, wgpu targets a common denominator across backends. I want to use Metal-specific features on macOS and Vulkan-specific features on Linux without fighting an abstraction. Third, wgpu doesn't run in <code>no_std</code>.</p>
+
+<p><strong>The tradeoff:</strong> I maintain two GPU backends instead of one abstraction. When Metal changes an API or Vulkan adds a feature, I update my bindings directly. There's no community of thousands finding bugs for me. I've accepted that. For a framework that needs to run on bare metal, owning the GPU layer isn't optional &mdash; it's the whole point.</p>
+
+<hr>
+
+<h2>A flexbox and CSS grid layout engine</h2>
+
+<p>Layout is the heart of a UI framework. Most Rust projects use <code>taffy</code> (the successor to <code>stretch</code>) or bind to Facebook's <code>yoga</code>. Both are good. Neither is <code>no_std</code> compatible without modification, and both bring their own allocation strategies that don't align with what I needed.</p>
+
+<p>Dija's layout engine implements CSS Flexbox Level 1 (section 9) and CSS Grid with fractional units, auto-placement, column/row spanning, and masonry layout. It's arena-allocated &mdash; every layout computation uses a bump allocator that gets reset each frame, producing zero heap fragmentation.</p>
+
+<pre><code><span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ty">FlexItem</span> {
+    <span class="kw">pub</span> child_index: <span class="ty">usize</span>,
+    <span class="kw">pub</span> base_size: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> min_main: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> max_main: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> flex_grow: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> flex_shrink: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> final_main: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> final_cross: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> main_pos: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> cross_pos: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> frozen: <span class="ty">bool</span>,
+}
+
+<span class="kw">pub</span>(<span class="kw">crate</span>) <span class="kw">struct</span> <span class="ty">FlexLine</span> {
+    <span class="kw">pub</span> start: <span class="ty">usize</span>,
+    <span class="kw">pub</span> end: <span class="ty">usize</span>,
+    <span class="kw">pub</span> main_size: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> cross_size: <span class="ty">Scalar</span>,
+    <span class="kw">pub</span> cross_pos: <span class="ty">Scalar</span>,
+}</code></pre>
+
+<p>The layout cache fingerprints each subtree. If a container's constraints haven't changed since last frame, the entire subtree is skipped. On a dashboard with 200+ nodes, this cuts layout time by 60-80%.</p>
+
+<p><strong>Was it worth it?</strong> The layout engine is probably the piece I'm most glad I built myself. It's tightly integrated with the rendering pipeline, it uses the arena allocator I designed for the framework, and I can add features (like masonry) without waiting for upstream.</p>
+
+<hr>
+
+<h2>Coroutines in assembly</h2>
+
+<p>Dija's runtime is built on an Erlang-inspired actor model. Every view is an actor with its own mailbox and lifecycle. The scheduler needs to suspend and resume thousands of actors cheaply &mdash; much cheaper than OS threads, and without the overhead of Rust's async machinery.</p>
+
+<p>So I wrote coroutines. In assembly. For five architectures.</p>
+
+<p>Here's x86_64:</p>
+
+<pre><code><span class="at">#[repr(C)]</span>
+<span class="kw">pub struct</span> <span class="ty">CpuContext</span> {
+    rsp: <span class="ty">u64</span>,
+    rbx: <span class="ty">u64</span>,
+    rbp: <span class="ty">u64</span>,
+    r12: <span class="ty">u64</span>,
+    r13: <span class="ty">u64</span>,
+    r14: <span class="ty">u64</span>,
+    r15: <span class="ty">u64</span>,
+}
+
+<span class="at">#[unsafe(naked)]</span>
+<span class="kw">pub unsafe extern</span> <span class="st">"C"</span> <span class="kw">fn</span> <span class="fn">context_switch</span>(
+    from: &amp;<span class="kw">mut</span> <span class="ty">CpuContext</span>,
+    to: &amp;<span class="ty">CpuContext</span>,
+) {
+    core::arch::<span class="mc">naked_asm!</span>(
+        <span class="cm">// Save callee-saved registers</span>
+        <span class="st">"mov [rdi + 0x00], rsp"</span>,
+        <span class="st">"mov [rdi + 0x08], rbx"</span>,
+        <span class="st">"mov [rdi + 0x10], rbp"</span>,
+        <span class="st">"mov [rdi + 0x18], r12"</span>,
+        <span class="st">"mov [rdi + 0x20], r13"</span>,
+        <span class="st">"mov [rdi + 0x28], r14"</span>,
+        <span class="st">"mov [rdi + 0x30], r15"</span>,
+        <span class="cm">// Restore callee-saved registers</span>
+        <span class="st">"mov rsp, [rsi + 0x00]"</span>,
+        <span class="st">"mov rbx, [rsi + 0x08]"</span>,
+        <span class="st">"mov rbp, [rsi + 0x10]"</span>,
+        <span class="st">"mov r12, [rsi + 0x18]"</span>,
+        <span class="st">"mov r13, [rsi + 0x20]"</span>,
+        <span class="st">"mov r14, [rsi + 0x28]"</span>,
+        <span class="st">"mov r15, [rsi + 0x30]"</span>,
+        <span class="st">"ret"</span>,
+    );
+}</code></pre>
+
+<p>Save seven registers. Restore seven registers. <code>ret</code>. That's a context switch. The same pattern is implemented for ARM64, RISC-V (64 and 32-bit), and ARM Thumb.</p>
+
+<p>A trampoline sets up the initial context so that the first <code>context_switch</code> into a new coroutine jumps to its entry function:</p>
+
+<pre><code><span class="kw">pub unsafe fn</span> <span class="fn">init_context</span>(
+    ctx: &amp;<span class="kw">mut</span> <span class="ty">CpuContext</span>,
+    stack_top: *<span class="kw">mut</span> <span class="ty">u8</span>,
+    entry: <span class="kw">unsafe fn</span>(*<span class="kw">mut</span> <span class="ty">u8</span>),
+    data: *<span class="kw">mut</span> <span class="ty">u8</span>,
+) {
+    <span class="kw">let mut</span> sp = (stack_top <span class="kw">as</span> <span class="ty">u64</span>) &amp; !<span class="num">0xF</span>; <span class="cm">// 16-byte alignment</span>
+    sp -= <span class="num">8</span>;
+    <span class="kw">unsafe</span> { *(sp <span class="kw">as</span> *<span class="kw">mut</span> <span class="ty">u64</span>) = <span class="num">0</span> };       <span class="cm">// null return address</span>
+    sp -= <span class="num">8</span>;
+    <span class="kw">unsafe</span> { *(sp <span class="kw">as</span> *<span class="kw">mut</span> <span class="ty">u64</span>) = trampoline <span class="kw">as</span> <span class="ty">u64</span> };
+    ctx.rsp = sp;
+    ctx.r12 = entry <span class="kw">as</span> <span class="ty">u64</span>;   <span class="cm">// entry point</span>
+    ctx.r13 = data <span class="kw">as</span> <span class="ty">u64</span>;    <span class="cm">// data pointer</span>
+}</code></pre>
+
+<p>The entry and data pointers are stashed in callee-saved registers (<code>r12</code>, <code>r13</code>) so they survive the context switch. The trampoline reads them and calls <code>entry(data)</code>.</p>
+
+<p><strong>Why not tokio or async/await?</strong> Tokio is designed for async I/O &mdash; network servers, file operations, timers. Dija needs cooperative multitasking for actors, not I/O multiplexing. The actor system needs to suspend an actor mid-computation, not mid-<code>await</code>. And tokio doesn't work in <code>no_std</code>.</p>
+
+<p><strong>The tradeoff:</strong> I'm maintaining assembly code for five architectures. When a new platform appears, I write a new context switch stub. It's about 50 lines per architecture. I've tested it with Miri (where possible) and with extensive property-based tests. It's one of the more nerve-wracking pieces to maintain, but it's also one of the smallest.</p>
+
+<hr>
+
+<h2>What I didn't build</h2>
+
+<p>I want to be honest about where the line is.</p>
+
+<p><strong><code>libm</code></strong> (sin, cos, sqrt): Dija depends on the <code>libm</code> crate &mdash; a pure-Rust, <code>no_std</code>-compatible implementation of the C math library. I considered writing my own, but <code>libm</code> is well-tested, platform-independent, and tiny. Reimplementing it would have been vanity, not engineering.</p>
+
+<p><strong><code>syn</code>, <code>quote</code>, <code>proc-macro2</code></strong>: Dija's proc macros (the <code>ui!</code> and <code>comp!</code> macros) depend on the standard proc-macro toolchain. These are build-time dependencies &mdash; they run at compile time and produce code that ships with zero runtime deps. The binary you run has no trace of them.</p>
+
+<p>Zero runtime dependencies doesn't mean zero build dependencies. I draw the line at what ships in the binary.</p>
+
+<hr>
+
+<h2>Was it worth it?</h2>
+
+<p>Honestly? It depends on what you're optimizing for.</p>
+
+<p><strong>What's worse:</strong> I have less community testing than battle-tested crates. My TTF parser has been tested by one person (me) on a few hundred fonts. HarfBuzz has been tested by billions of web pages. My Vulkan bindings haven't been beaten on by thousands of game developers. I find bugs that ash found years ago.</p>
+
+<p>Feature velocity is slower. Every missing feature is something I have to build, not import. When someone asks "does Dija support X?" the answer is sometimes "not yet, because I had to write Y first."</p>
+
+<p><strong>What's better:</strong> One binary. Five platforms. Total control over the stack. No supply chain risk &mdash; I can audit every line. Compile times are predictable because there's nothing to download. Binary size is small because there's no dead code from crates I half-use.</p>
+
+<p>And it runs on a 256KB microcontroller. That was the whole point.</p>
+
+<p><strong>The real cost:</strong> Time. I spent months building infrastructure that could have been features. The TTF parser, the GPU backends, the layout engine, the coroutines &mdash; that's probably six months of work that users never see directly. They see a dashboard rendering on five platforms. They don't see the 142,000 lines underneath.</p>
+
+<p>Would I do it again? Yes. But I wouldn't recommend it to most people. This approach only makes sense if you have a hard constraint (like bare metal) that forces it, or if you're building a long-lived foundation where owning the stack pays compounding returns.</p>
+
+<p>Dija is both.</p>
+
+<hr>
+
+<h2>What's next</h2>
+
+<p>The framework isn't public yet. I'm polishing the component library, finishing accessibility support, and writing documentation. When it's ready, it'll be open source.</p>
+
+<p>If you want to follow the progress, I'm posting updates on <a href="https://www.linkedin.com/in/gueye-daouda">LinkedIn</a>.</p>
+
+<p>Would you make this tradeoff? I'm curious what you think.</p>
+
+<div class="footer">
+  <p>Daouda Gueye &mdash; March 2026</p>
+</div>
+
+</article>
+</body>
+</html>
